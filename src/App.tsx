@@ -55,8 +55,17 @@ export default function App() {
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginErrorType, setLoginErrorType] = useState<'already-in-use' | 'invalid-credential' | null>(null);
+  const [loginErrorType, setLoginErrorType] = useState<'already-in-use' | 'invalid-credential' | 'google-auth-failed' | null>(null);
   const [bypassActive, setBypassActive] = useState<boolean>(() => getBypassFirebase());
+  const [isInIframe, setIsInIframe] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsInIframe(window.self !== window.top);
+    } catch (e) {
+      setIsInIframe(true);
+    }
+  }, []);
 
   // Form states for login screen
   const [loginEmail, setLoginEmail] = useState('');
@@ -271,8 +280,8 @@ export default function App() {
       await api.loginWithGoogle();
     } catch (err: any) {
       console.error(err);
-      setLoginError('พบข้อผิดพลาดในการเชื่อมต่อ Google Auth แนะนำให้ใช้ บัญชีประจำเครื่อง (Local) แทนหากเข้าใช้งานใน Sandbox');
-      setLoginErrorType(null);
+      setLoginError('🔒 ข้อผิดพลาดจากการป้องกันของเบราว์เซอร์: ไม่สามารถแสดงป๊อปอัป Google ลงชื่อเข้าใช้ใน Sandbox (iFrame) ได้ หรือยังไม่ได้ตั้งค่า Authorized Domains ใน Firebase');
+      setLoginErrorType('google-auth-failed');
     }
   };
 
@@ -408,6 +417,38 @@ export default function App() {
               >
                 เข้าใช้งานผ่าน Google Auth Popup
               </button>
+
+              {isInIframe && (
+                <div className="p-3 bg-amber-50/80 border border-amber-100 rounded-xl text-[11px] text-amber-900 leading-relaxed font-semibold space-y-1.5 animate-fade-in" id="iframe-google-auth-notice">
+                  <div className="flex items-center gap-1 font-bold text-amber-950">
+                    <span>💡 แนะนำสำหรับการใช้งานใน Sandbox (iFrame):</span>
+                  </div>
+                  <div>
+                    เบราว์เซอร์จะบล็อกส่วนป๊อปอัป Google ลงชื่อเข้าใช้เพื่อความปลอดภัย คุณสามารถ:
+                  </div>
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCloudModeInput(false);
+                        setLoginError(null);
+                        setLoginErrorType(null);
+                      }}
+                      className="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-[10px] cursor-pointer text-center select-none"
+                    >
+                      ⚡ สลับเป็นโหมด "บัญชีประจำเครื่อง (Local)" (ดีสุดในแซนบ็อกซ์)
+                    </button>
+                    <a
+                      href={window.location.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full py-1.5 px-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl text-[10px] cursor-pointer text-center block select-none"
+                    >
+                      🌐 คลิกเพื่อรันแอปบนหน้านอก (New Tab) เพื่อเปิดใช้ Google Popup
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -475,6 +516,41 @@ export default function App() {
                   >
                     ⚡ ดำเนินการต่อด้วย "บัญชีประจำเครื่อง (Local)" โดยไม่ต้องใช้รหัสผ่าน
                   </button>
+                </div>
+              )}
+
+              {loginErrorType === 'google-auth-failed' && (
+                <div className="pt-1 flex flex-col gap-2.5" id="error-action-google-auth-failed">
+                  <div className="text-[11px] text-amber-850 font-bold bg-amber-50 p-2.5 rounded-xl border border-amber-100 leading-relaxed">
+                    🛠️ คำสั่งแก้ไขปัญหา Google Popup: เนื่องจากกฎระเบียบความปลอดภัยภายใน Sandbox (iFrame) หรือยังไม่ได้ผูกสิทธิ์ Domain บน Firebase คอนโซล คุณสามารถข้ามปัญหานี้ได้ทันทีโดยเลือกข้อใดข้อหนึ่งด้านล่าง:
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setLoginError(null);
+                        setLoginErrorType(null);
+                        setIsCloudModeInput(false);
+                        await api.loginWithEmailLocal(loginEmail || "guest@fintrack.local");
+                      } catch (err: any) {
+                        setLoginError(err?.message || String(err));
+                        setLoginErrorType(null);
+                      }
+                    }}
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    ⚡ สลับมาใช้ "บัญชีประจำเครื่อง (Local)" (กระเป๋าเซฟแยกตามอีเมล เข้าใช้ได้ทันที)
+                  </button>
+                  
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs block"
+                  >
+                    🌐 เปิดแอปแยกหน้าต่างแท็บใหม่ (New Tab) เพื่อให้ Google Popup ทำงาน
+                  </a>
                 </div>
               )}
             </div>
