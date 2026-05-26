@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api, isFirebaseConfigured, auth, getBypassFirebase, setBypassFirebase } from './firebase';
 import { Transaction } from './types';
 import DashboardCard from './components/DashboardCard';
@@ -17,7 +17,8 @@ import {
   Sparkles,
   RefreshCw,
   LogIn,
-  AlertCircle
+  AlertCircle,
+  Calendar
 } from 'lucide-react';
 
 const getCurrentThaiMonthAndYear = () => {
@@ -31,6 +32,22 @@ const getCurrentThaiMonthAndYear = () => {
   return `${month} ${year}`;
 };
 
+const formatThaiMonthYear = (yearMonthStr: string) => {
+  if (!yearMonthStr || yearMonthStr === 'all') return 'ประวัติทั้งหมด';
+  const parts = yearMonthStr.split('-');
+  if (parts.length < 2) return yearMonthStr;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const months = [
+    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+  ];
+  const monthIndex = month - 1;
+  const thaiMonth = months[monthIndex] || String(month);
+  const thaiYear = year + 543;
+  return `${thaiMonth} ${thaiYear}`;
+};
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -38,20 +55,60 @@ export default function App() {
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [bypassActive, setBypassActive] = useState(() => getBypassFirebase());
+  const [loginErrorType, setLoginErrorType] = useState<'already-in-use' | 'invalid-credential' | null>(null);
+  const [bypassActive, setBypassActive] = useState<boolean>(() => getBypassFirebase());
+
+  // Form states for login screen
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isCloudModeInput, setIsCloudModeInput] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // Find current month string (e.g. "2026-05")
+  const currentMonthStr = useMemo(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStr);
+
+  // Dynamically extract all unique months populated across existing entries
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set<string>();
+    
+    // Always include today's current month in the dropdown choices
+    monthsSet.add(currentMonthStr);
+    
+    transactions.forEach(tx => {
+      if (tx.date && tx.date.length >= 7) {
+        monthsSet.add(tx.date.substring(0, 7));
+      }
+    });
+    
+    // Sort descending so newest months are on top
+    return Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
+  }, [transactions, currentMonthStr]);
+
+  // Compute transactions filtered by the chosen month
+  const filteredTxs = useMemo(() => {
+    if (selectedMonth === 'all') return transactions;
+    return transactions.filter(tx => tx.date.startsWith(selectedMonth));
+  }, [transactions, selectedMonth]);
 
   const isCloudActive = isFirebaseConfigured && !bypassActive;
 
-  // 1. Subscribe to User Authentication State Change
+  // Subscribe to Auth State Changes
   useEffect(() => {
     const unsubscribe = api.subscribeAuth((changedUser) => {
       setUser(changedUser);
+      setBypassActive(getBypassFirebase());
       setIsAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Fetch or Subscribe to User Transaction collection once authenticated
+  // Subscribe to transaction store
   useEffect(() => {
     if (!user) {
       setTransactions([]);
@@ -67,36 +124,6 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Auth logins handler
-  const handleLogin = async () => {
-    try {
-      setLoginError(null);
-      await api.loginWithGoogle();
-    } catch (e: any) {
-      console.error('Login error:', e);
-      setLoginError(e?.message || String(e));
-    }
-  };
-
-  const handleActivateBypass = () => {
-    setBypassFirebase(true);
-    setBypassActive(true);
-    setLoginError(null);
-  };
-
-  const handleDeactivateBypass = () => {
-    setBypassFirebase(false);
-    setBypassActive(false);
-    setUser(null);
-  };
-
-  const handleLogout = async () => {
-    if (window.confirm('คุณต้องการออกจากระบบหรือไม่?')) {
-      await api.logout();
-      setEditingTransaction(null);
-    }
-  };
-
   // Create or Update operations
   const handleSaveTransaction = async (formData: Omit<Transaction, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => {
     if (!user) return;
@@ -106,6 +133,10 @@ export default function App() {
       setEditingTransaction(null);
     } else {
       await api.addTransaction(user.uid, formData);
+      if (formData.date && formData.date.length >= 7) {
+        const addedMonth = formData.date.substring(0, 7);
+        setSelectedMonth(addedMonth);
+      }
     }
   };
 
@@ -133,7 +164,7 @@ export default function App() {
     let income = 0;
     let expense = 0;
     
-    transactions.forEach((tx) => {
+    filteredTxs.forEach((tx) => {
       if (tx.type === 'income') {
         income += tx.amount;
       } else {
@@ -147,22 +178,103 @@ export default function App() {
       expense,
       net,
     };
-  }, [transactions]);
+  }, [filteredTxs]);
 
   // Dynamic status bar details
-  const databaseStatusLabel = isFirebaseConfigured
+  const databaseStatusLabel = isCloudActive
     ? 'เชื่อมต่อคลาวด์จริง (Firebase)'
-    : 'จำลองข้อมูลเฉพาะเครื่อง (Local Database)';
+    : 'บันทึกปลอดภัยในเครื่อง (Local Storage)';
 
-  const databaseStatusIcon = isFirebaseConfigured ? (
+  const databaseStatusIcon = isCloudActive ? (
     <Database className="w-3.5 h-3.5 text-emerald-500" />
   ) : (
     <CloudOff className="w-3.5 h-3.5 text-amber-500" />
   );
 
-  const databaseStatusStyle = isFirebaseConfigured
+  const databaseStatusStyle = isCloudActive
     ? 'bg-emerald-50 text-emerald-700 border-emerald-100/50'
     : 'bg-amber-50 text-amber-700 border-amber-100/50';
+
+  // Login action handlers
+  const handleEmailLocalLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail) {
+      setLoginError('กรุณากรอกอีเมลของคุณ');
+      setLoginErrorType(null);
+      return;
+    }
+    try {
+      setLoginError(null);
+      setLoginErrorType(null);
+      await api.loginWithEmailLocal(loginEmail);
+    } catch (err: any) {
+      setLoginError(err?.message || String(err));
+      setLoginErrorType(null);
+    }
+  };
+
+  const handleEmailPasswordAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      setLoginError('กรุณากรอกอีเมลและรหัสผ่าน');
+      setLoginErrorType(null);
+      return;
+    }
+    try {
+      setLoginError(null);
+      setLoginErrorType(null);
+      if (isSignUp) {
+        await api.registerWithEmailAndPassword(loginEmail, loginPassword);
+      } else {
+        await api.loginWithEmailAndPassword(loginEmail, loginPassword);
+      }
+    } catch (err: any) {
+      console.error('Firebase authentication error:', err);
+      const errorCode = err?.code || '';
+      const errorMessage = err?.message || String(err);
+      
+      let msg = '';
+      let type: 'already-in-use' | 'invalid-credential' | null = null;
+      
+      if (errorCode === 'auth/email-already-in-use' || errorMessage.includes('auth/email-already-in-use')) {
+        msg = '⚠️ อีเมลนี้มีอยู่ในคลาวด์แล้ว: หากต้องการใช้บัญชีนี้ ให้กดสลับโหมดไปเป็นหน้า "เข้าสู่ระบบคลาวด์" (หรือจะเลือกโหมด "บัญชีประจำเครื่อง" ก็ได้โดยตรง)';
+        type = 'already-in-use';
+      } else if (
+        errorCode === 'auth/invalid-credential' || 
+        errorMessage.includes('auth/invalid-credential') ||
+        errorCode === 'auth/user-not-found' ||
+        errorMessage.includes('auth/user-not-found') ||
+        errorCode === 'auth/wrong-password' ||
+        errorMessage.includes('auth/wrong-password')
+      ) {
+        msg = '❌ รหัสผ่านไม่ถูกต้อง หรือยังไม่มีบัญชีสมาชิกนี้บนคลาวด์: กรุณาคลิกเพื่อลองสมัครสมาชิกใหม่ หรือเปลี่ยนไปใช้ระบบ บัญชีเซกเมนต์ประจำเครื่อง ได้โดยตรงครับ';
+        type = 'invalid-credential';
+      } else if (errorCode === 'auth/weak-password' || errorMessage.includes('auth/weak-password')) {
+        msg = '🔒 รหัสผ่านสั้นเกินไป: ทางระบบความปลอดภัยของคลาวด์ต้องการรหัสผ่านอย่างน้อย 6 ตัวอักษรขึ้นไป';
+      } else if (errorCode === 'auth/invalid-email' || errorMessage.includes('auth/invalid-email')) {
+        msg = '✉️ รูปแบบอีเมลไม่ถูกต้อง: กรุณาป้อนอีเมลให้เรียบร้อย เช่น name@example.com';
+      } else if (errorCode === 'auth/operation-not-allowed' || errorMessage.includes('auth/operation-not-allowed')) {
+        msg = '🚫 บริการภายนอกไม่ได้เปิดสิทธิ์: ล็อกอินแบบใช้อีเมล/รหัสผ่านใน Firebase Console ยังไม่เปิดให้บริการ แนะนำให้ใช้ตัวเลือก "บัญชีประจำเครื่อง (Local)" ด้านบนแทนพอร์ตเซิร์ฟเวอร์ครับ';
+      } else {
+        msg = `พบข้อผิดพลาด: ${errorMessage || errorCode}`;
+      }
+      
+      setLoginError(msg);
+      setLoginErrorType(type);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      setLoginError(null);
+      setLoginErrorType(null);
+      await api.loginWithGoogle();
+    } catch (err: any) {
+      console.error(err);
+      setLoginError('พบข้อผิดพลาดในการเชื่อมต่อ Google Auth แนะนำให้ใช้ บัญชีประจำเครื่อง (Local) แทนหากเข้าใช้งานใน Sandbox');
+      setLoginErrorType(null);
+    }
+  };
 
   // Auth Loading Screen Display
   if (isAuthLoading) {
@@ -178,132 +290,206 @@ export default function App() {
   if (!user) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans" id="login-splash">
-        <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl p-8 text-center shadow-lg space-y-6" id="login-card">
+        <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl p-8 shadow-xl space-y-6" id="login-card">
           <div className="mx-auto w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner" id="logo-icon-container">
             <PiggyBank className="w-8 h-8" />
           </div>
           
-          <div className="space-y-2" id="login-copy">
+          <div className="space-y-2 text-center" id="login-copy">
             <h2 className="text-2xl font-bold text-slate-800 tracking-tight" id="login-title">
-              สมุดบัญชีรายรับ-รายจ่าย
+              FinTrack สมุดบัญชีรายรับ-รายจ่าย
             </h2>
-            <p className="text-sm text-slate-500" id="login-subtitle">
-              วิเคราะห์รายจ่าย แยกแยะรายรับ เปรียบเทียบผลลัพธ์รายเดือน ด้วยแดชบอร์ดอัจฉริยะดูง่ายในสไตล์ Professional Polish
+            <p className="text-xs text-slate-500 max-w-sm mx-auto" id="login-subtitle">
+              แยกบัญชีด้วยอีเมลส่วนตัวของตนเอง ใช้งานได้พร้อมกันหรือสลับเปลี่ยนเพื่อความเป็นส่วนตัว
             </p>
           </div>
 
-          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-left space-y-2 text-xs text-amber-950 font-medium" id="login-notice">
-            <div className="flex items-center gap-1.5 font-semibold text-amber-800">
-              <CloudOff className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>ระบบจัดเก็บข้อมูลออฟไลน์สำรอง</span>
-            </div>
-            <p className="leading-relaxed text-amber-900/80">
-              ตัวแอปติดตั้งระบบเก็บประจุภายในเครื่องให้เสร็จสรรพ สามารถเชื่อมต่อนโยบายความปลอดภัย และเข้าใช้งานโหมดออฟไลน์ได้ทันทีเมื่อไม่มีระบบคลาวด์
-            </p>
-          </div>
-
-          <div className="space-y-3 pt-2" id="login-actions">
+          {/* Mode Switch Tabs */}
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-2xl" id="mode-switcher-tabs">
             <button
-              onClick={handleLogin}
-              className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-semibold text-sm shadow-md shadow-blue-600/10 cursor-pointer transition-all flex items-center justify-center gap-2"
-              id="google-login-btn"
+              type="button"
+              onClick={() => {
+                setIsCloudModeInput(false);
+                setLoginError(null);
+                setLoginErrorType(null);
+              }}
+              className={`py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                !isCloudModeInput 
+                  ? 'bg-white text-slate-800 shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
             >
-              <LogIn className="w-4 h-4" />
-              เข้าสู่ระบบระบบบัญชี (Google Auth)
+              บัญชีประจำเครื่อง (Local)
             </button>
-
-            {isFirebaseConfigured && (
-              <button
-                onClick={handleActivateBypass}
-                className="w-full py-2.5 px-4 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-2xl font-semibold text-xs cursor-pointer transition-all flex items-center justify-center gap-2"
-                id="bypass-login-btn"
-              >
-                เข้าใช้งานผ่าน Offline (Local Space) ทันที
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setIsCloudModeInput(true);
+                setLoginError(null);
+                setLoginErrorType(null);
+              }}
+              className={`py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                isCloudModeInput 
+                  ? 'bg-white text-slate-800 shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              บัญชีเซิร์ฟเวอร์คลาวด์
+            </button>
           </div>
 
-          {loginError && (
-            <div className="p-5 bg-rose-50 border border-rose-200 rounded-2xl text-left text-xs text-rose-950 space-y-3.5" id="login-error-card">
-              <div className="flex items-center gap-1.5 font-bold text-rose-800">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>เกิดข้อผิดพลาดในการตรวจสอบสิทธิ์ (Auth Error)</span>
-              </div>
-              
-              <div className="text-[11px] leading-relaxed space-y-2.5">
-                {loginError.includes('unauthorized-domain') ? (
-                  <>
-                    <p className="font-semibold text-rose-800">แนะนำวิธีแก้ไข (2 ขั้นตอนสั้นๆ):</p>
-                    
-                    <div className="space-y-2">
-                      <p className="font-medium text-slate-800">1. คัดลอก "ทั้งสองดีไซน์โดเมน" ไปเพิ่มใน Firebase Console:</p>
-                      <p className="text-slate-500 text-[10px]">ไปที่ Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains แล้วกด Add Domain และเพิ่ม 2 โดเมนนี้:</p>
-                      
-                      {/* Domain 1: DEV */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-slate-400 font-semibold block">โดเมนแสดงผลตอนพัฒนา (Dev):</span>
-                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
-                          <input 
-                            type="text" 
-                            readOnly 
-                            value="ais-dev-udano2khb4yqnsbyr43jhg-654947851578.asia-southeast1.run.app" 
-                            className="flex-1 bg-transparent border-0 text-[10px] font-mono font-medium outline-hidden select-all"
-                          />
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText("ais-dev-udano2khb4yqnsbyr43jhg-654947851578.asia-southeast1.run.app");
-                              alert('คัดลอกโดเมน Dev สำเร็จ!');
-                            }}
-                            className="text-blue-600 hover:text-blue-800 font-bold text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100 cursor-pointer"
-                          >
-                            คัดลอก
-                          </button>
-                        </div>
-                      </div>
+          <form onSubmit={isCloudModeInput ? handleEmailPasswordAuth : handleEmailLocalLogin} className="space-y-4" id="login-form">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600 block">อีเมลของคุณ</label>
+              <input
+                type="email"
+                required
+                placeholder="example@mail.com"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all font-medium"
+              />
+            </div>
 
-                      {/* Domain 2: PRE */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-slate-400 font-semibold block">โดเมนเวอร์ชันแชร์ (Shared Preview):</span>
-                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
-                          <input 
-                            type="text" 
-                            readOnly 
-                            value="ais-pre-udano2khb4yqnsbyr43jhg-654947851578.asia-southeast1.run.app" 
-                            className="flex-1 bg-transparent border-0 text-[10px] font-mono font-medium outline-hidden select-all"
-                          />
-                          <button 
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText("ais-pre-udano2khb4yqnsbyr43jhg-654947851578.asia-southeast1.run.app");
-                              alert('คัดลอกโดเมน Preview สำเร็จ!');
-                            }}
-                            className="text-blue-600 hover:text-blue-800 font-bold text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100 cursor-pointer"
-                          >
-                            คัดลอก
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-white/60 border border-rose-100 rounded-xl space-y-1 mt-2.5">
-                      <p className="font-semibold text-rose-800 flex items-center gap-1 text-[11px]">
-                        💡 คำแนะนำพิเศษ: เปิดใช้งานในหน้าต่างใหม่
-                      </p>
-                      <p className="text-slate-600 text-[10px] leading-relaxed">
-                        เนื่องจากเบราว์เซอร์ปัจจุบันมักปิดกั้นคุ้กกี้ใน Iframe (3rd Party Cookies Block) ให้กดปุ่ม <strong>"เปิดในหน้าต่างใหม่" (Open in new window)</strong> ที่แถบด้านขวาบนของตัวอย่างผลลัพธ์ เพื่อใช้งานบัญชีโดยไม่อยู่ภายใต้เฟรม Iframe ของ AI Studio
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <p className="font-mono bg-white/50 p-1.5 rounded border border-rose-100 break-all">{loginError}</p>
-                )}
+            {isCloudModeInput && (
+              <div className="space-y-1.5 focus-within:animate-pulse">
+                <label className="text-xs font-semibold text-slate-600 block">รหัสผ่านบัญชี</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="รหัสผ่านอย่างน้อย 6 หลัก"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all font-medium"
+                />
               </div>
+            )}
+
+            {/* Submit Action Block */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm shadow-md shadow-blue-600/15 cursor-pointer transition-all flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                {isCloudModeInput 
+                  ? (isSignUp ? 'ยืนยันการสมัครและเชื่อมคลาวด์' : 'ล็อกอินเข้าสู่คลาวด์') 
+                  : 'เข้าสู่แผงบัญชีทันที'
+                }
+              </button>
+            </div>
+          </form>
+
+          {/* Cloud Toggle Sign-up / Sign-in */}
+          {isCloudModeInput && (
+            <div className="flex justify-center text-xs font-medium" id="toggle-signup-link">
+              <button
+                type="button"
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-blue-600 hover:underline cursor-pointer"
+              >
+                {isSignUp ? 'มีบัญชีแล้ว? เข้าสู่ระบบคลาวด์' : 'ยังไม่มีบัญชีคลาวด์? สมัครสมาชิกที่นี่'}
+              </button>
             </div>
           )}
 
-          <div className="text-[11px] text-slate-400" id="login-footer">
-            พัฒนาตัวระบบโดยใช้ React + Tailwind CSS + Firebase Security Cloud
+          {/* Social Sign In Fallback for Cloud */}
+          {isCloudModeInput && isFirebaseConfigured && (
+            <div className="space-y-3 pt-2" id="alternative-sign-in">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold uppercase tracking-wider justify-center">
+                <div className="h-[1px] bg-slate-200 w-10"></div>
+                <span>หรือระบุสิทธิ์ด้วย Google</span>
+                <div className="h-[1px] bg-slate-200 w-10"></div>
+              </div>
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                className="w-full py-2.5 px-4 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-2xl font-semibold text-xs cursor-pointer transition-all flex items-center justify-center gap-2"
+              >
+                เข้าใช้งานผ่าน Google Auth Popup
+              </button>
+            </div>
+          )}
+
+          {/* Error Message area */}
+          {loginError && (
+            <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-xs text-rose-850 space-y-3" id="login-error-display">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <AlertCircle className="w-4.5 h-4.5 text-rose-600 shrink-0" />
+                  <span className="text-[13px] font-bold">คำแนะนำแก้ไขปัญหา</span>
+                </div>
+                <p className="leading-relaxed font-semibold text-rose-900 text-xs">{loginError}</p>
+              </div>
+
+              {/* Dynamic CTA Helpful Actions on Cloud Errors */}
+              {loginErrorType === 'already-in-use' && (
+                <div className="pt-1 flex flex-col gap-1.5" id="error-action-already-in-use">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSignUp(false);
+                      setLoginError(null);
+                      setLoginErrorType(null);
+                    }}
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    สลับไปหน้า "เข้าสู่ระบบ (Sign In)" เพื่อล็อกอินด้วยรหัสผ่าน
+                  </button>
+                </div>
+              )}
+
+              {loginErrorType === 'invalid-credential' && (
+                <div className="pt-1 flex flex-col gap-2" id="error-action-invalid-credential">
+                  <div className="text-[11px] text-rose-800 font-bold bg-rose-100/50 p-2 rounded-lg leading-relaxed">
+                    💡 หากคุณเพิ่งเริ่มใช้และยังไม่มีบัญชีด้วยอีเมลนี้ กรุณากดปุ่มสมัครสมาชิกด้านล่างก่อนใช้งาน หรือสลับไปใช้บัญชีประจำเครื่องได้สะดวกทันที:
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSignUp(true);
+                      setLoginError(null);
+                      setLoginErrorType(null);
+                    }}
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    🤝 สมัครสมาชิกใหม่ (Sign Up) สำหรับอีเมลนี้ทันที
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setLoginError(null);
+                        setLoginErrorType(null);
+                        setIsCloudModeInput(false);
+                        await api.loginWithEmailLocal(loginEmail);
+                      } catch (err: any) {
+                        setLoginError(err?.message || String(err));
+                        setLoginErrorType(null);
+                      }
+                    }}
+                    className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    ⚡ ดำเนินการต่อด้วย "บัญชีประจำเครื่อง (Local)" โดยไม่ต้องใช้รหัสผ่าน
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100/70 text-left space-y-1.5 text-[11px] text-slate-600" id="login-guide">
+            <p className="font-bold text-slate-700">💡 เพิ่มเติมเพื่อการใช้งานที่ดีที่สุด:</p>
+            <p className="leading-relaxed">
+              * เมลประจำเครื่อง (Local) บันทึกในเบราว์เซอร์คุณโดยตรง ปลอดภัย ไม่ผ่านเซิร์ฟเวอร์ เหมาะกับผู้ใช้ทั่วไป<br/>
+              * ทุกอีเมลจำกัดเนื้อหาแยกจากกันอย่างเด็ดขาด ช่วยรักษาความปลอดภัยและความลับของข้อมูลได้อย่างดีเยี่ยม
+            </p>
+          </div>
+
+          <div className="text-[10px] text-slate-400 text-center" id="login-footer">
+            พัฒนาบัญชีด้วยระบบออฟไลน์สมบูรณ์แบบ + สนับสนุนคลาวด์ Firebase
           </div>
         </div>
       </div>
@@ -332,55 +518,40 @@ export default function App() {
           {/* Connected state pill matched with the dark card design */}
           <div className="p-5 bg-slate-950 rounded-2xl text-white shadow-xs" id="status-pill-box">
             <p className="text-[10px] text-slate-400 mb-1.5 uppercase font-medium tracking-wider">สถานะการเก็บข้อมูล</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className={`w-2.5 h-2.5 rounded-full ${isCloudActive ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}></div>
-              <span className="text-xs font-semibold">
-                {isCloudActive ? 'Connected (Firebase Cloud)' : 'Guest Offline (Local Space)'}
+            <div className="flex items-center gap-2">
+              <div className={`w-2.5 h-2.5 rounded-full ${isCloudActive ? 'bg-emerald-400' : 'bg-blue-400'}`}></div>
+              <span className="text-xs font-semibold font-mono text-slate-200">
+                {isCloudActive ? 'คลาวด์เซิร์ฟเวอร์ (Cloud)' : 'เซกเมนต์ในเครื่อง (Local)'}
               </span>
             </div>
-            {bypassActive && (
-              <button
-                onClick={handleDeactivateBypass}
-                className="mt-3.5 w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-[10px] rounded-xl text-white font-bold transition-all cursor-pointer shadow-indigo-500/10 text-center"
-              >
-                ลองเชื่อมต่อคลาวด์อีกครั้ง &rarr;
-              </button>
-            )}
+            <p className="text-[10px] text-zinc-400 mt-2 font-medium truncate">
+              อีเมลบัญชี: {user.email}
+            </p>
           </div>
 
           {/* Prompt/Guide to explain Local Storage in details */}
-          {!isFirebaseConfigured && (
+          {!isCloudActive && (
             <div className="p-4 bg-blue-50/50 border border-blue-100/50 rounded-2xl space-y-2 text-xs text-blue-900" id="quick-tip-panel">
               <div className="flex items-center gap-1.5 font-bold">
                 <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                <span>คำแนะนำระบบคลาวด์</span>
+                <span>ความปลอดภัยของข้อมูล</span>
               </div>
               <p className="leading-relaxed text-slate-600">
-                หากต้องการซิงค์ข้ามอุปกรณ์ สามารถติดต่อเจ้าของแอปเพื่อผูกกับข้อมูลกับระบบฐานข้อมูลฟรี Firebase ทันที!
+                เมื่อพิมพ์อีเมลใดๆ ระบบจะแยกข้อมูลบัญชีของคุณ ออกจากอีเมลอื่นอย่างเด็ดขาด ให้คุณสามารถจัดการข้อมูลเป็นรายบุคคลอย่างเป็นส่วนตัว
               </p>
             </div>
           )}
         </div>
 
         {/* User profile layout */}
-        <div className="pt-6 border-t border-slate-100 space-y-4" id="sidebar-user-group">
+        <div className="pt-4 border-t border-slate-100 flex flex-col gap-3 animate-fade-in" id="sidebar-user-group">
           <div className="flex items-center gap-3" id="user-metadata">
-            {user.photoURL ? (
-              <img 
-                src={user.photoURL} 
-                alt={user.displayName} 
-                className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-50"
-                referrerPolicy="no-referrer"
-                id="user-profile-avatar"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200" id="user-profile-fallback">
-                <User className="w-5 h-5" />
-              </div>
-            )}
+            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200 shrink-0" id="user-profile-fallback">
+              <User className="w-5 h-5" />
+            </div>
             <div className="min-w-0" id="user-names">
               <p className="text-xs font-semibold text-slate-800 truncate" id="user-display-name">
-                {user.displayName || 'ผู้ใช้ทั่วไป (Guest)'}
+                {user.displayName || 'ผู้ใช้แอป FinTrack'}
               </p>
               <p className="text-[10px] text-slate-400 truncate" id="user-email-address">
                 {user.email}
@@ -388,14 +559,51 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="w-full py-2 px-3 flex items-center justify-center gap-2 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-xl text-center text-xs font-semibold text-slate-600 transition-colors cursor-pointer"
-            id="user-logout-btn"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            ออกจากระบบ
-          </button>
+          {showLogoutConfirm ? (
+            <div className="flex flex-col gap-2 p-2.5 bg-rose-50 border border-rose-100 rounded-xl animate-fade-in" id="logout-confirm-box">
+              <p className="text-[10px] text-rose-800 font-bold text-center leading-relaxed">
+                ยืนยันเพื่อออกจากระบบ / สลับอีเมลคีย์?
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    api.logout();
+                    setEditingTransaction(null);
+                    setShowLogoutConfirm(false);
+                  }}
+                  className="py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold text-center cursor-pointer transition-colors"
+                  id="confirm-logout-btn"
+                >
+                  ใช่, ล็อกเอาต์
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="py-1.5 px-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[10px] font-bold text-center cursor-pointer transition-colors"
+                  id="cancel-logout-btn"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="w-full py-2 px-3 flex items-center justify-center gap-2 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-xl text-center text-xs font-semibold text-slate-600 transition-colors cursor-pointer"
+              id="user-logout-btn"
+            >
+              <LogOut className="w-3.5 h-3.5 text-slate-500 hover:rotate-12 transition-transform" />
+              ออกจากระบบ / สลับอีเมล
+            </button>
+          )}
+        </div>
+
+        {/* Minimalist brand footer */}
+        <div className="pt-4 border-t border-slate-100" id="sidebar-footer-group">
+          <p className="text-[10px] text-slate-400 leading-relaxed font-sans" id="footer-copy">
+            FinTrack บันทึกบัญชีด้วยระบบแยกแยะเมลส่วนตัว ข้อมูลรันบนเบราว์เซอร์อย่างปลอดภัย 100%
+          </p>
         </div>
 
       </aside>
@@ -403,20 +611,43 @@ export default function App() {
       {/* Main applet content stage */}
       <main className="flex-1 min-w-0 p-6 md:p-8 space-y-6" id="dashboard-stage">
         
-        {/* Header Title Area */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" id="stage-header">
-          <div>
-            <h2 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight" id="stage-title">
-              สรุปผลการเงินบัญชีประจำเดือน {getCurrentThaiMonthAndYear()}
-            </h2>
-            <p className="text-xs text-slate-500 mt-1" id="stage-subtitle">แผงควบคุมหลักวิเคราะห์รายรับรายจ่ายแบบเรียลไทม์</p>
+        {/* Header Title Area with Dynamically Pickable Month Select */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs" id="stage-header">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0" id="header-calendar-icon">
+              <Calendar className="w-5.5 h-5.5" />
+            </div>
+            <div>
+              <h2 className="text-base md:text-lg font-bold text-slate-800 tracking-tight" id="stage-title">
+                สรุปผลการเงินประจำ{selectedMonth === 'all' ? 'ประวัติทั้งหมด' : `เดือน ${formatThaiMonthYear(selectedMonth)}`}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5" id="stage-subtitle">แผงควบคุมหลักวิเคราะห์รายรับรายจ่ายของคุณตามหน้าประวัติได้อย่างแม่นยำ</p>
+            </div>
+          </div>
+
+          {/* Month Dropdown Selector with clean local styling */}
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 bg-slate-50 p-1.5 rounded-xl border border-slate-100" id="month-selector-group">
+            <span className="text-[11px] font-bold text-slate-500 font-sans pl-2 select-none">สลับเดือน:</span>
+            <select
+              id="month-select-dropdown"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-blue-500/15 focus:border-blue-600 transition-all cursor-pointer shadow-2xs font-sans min-w-[150px]"
+            >
+              <option value="all">📂 ประวัติทั้งหมด (ทุกเดือน)</option>
+              {availableMonths.map((mStr) => (
+                <option key={mStr} value={mStr}>
+                  📅 {formatThaiMonthYear(mStr)}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         {/* Dynamic Summary Cards widgets */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6" id="summary-cards-row">
           <DashboardCard
-            title="ยอดเงินคงเหลือสุทธิ"
+            title={selectedMonth === 'all' ? 'ยอดเงินคงเหลือสะสมสุทธิ' : 'ยอดเงินคงเหลือสุทธิ'}
             amount={summary.net}
             icon={<Wallet className="w-6 h-6 text-blue-600" id="summary-icon-balance" />}
             colorClass="bg-blue-50 text-blue-600"
@@ -424,7 +655,7 @@ export default function App() {
             subtextColor={summary.net >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-500 font-semibold'}
           />
           <DashboardCard
-            title="รายรับเดือนนี้"
+            title={selectedMonth === 'all' ? 'รายรับสะสมทั้งหมด' : 'รายรับประจำเดือนนี้'}
             amount={summary.income}
             icon={<TrendingUp className="w-6 h-6 text-emerald-600" id="summary-icon-income" />}
             colorClass="bg-emerald-50 text-emerald-600"
@@ -432,7 +663,7 @@ export default function App() {
             subtextColor="text-slate-400"
           />
           <DashboardCard
-            title="รายจ่ายเดือนนี้"
+            title={selectedMonth === 'all' ? 'รายจ่ายสะสมทั้งหมด' : 'รายจ่ายประจำเดือนนี้'}
             amount={summary.expense}
             icon={<TrendingDown className="w-6 h-6 text-rose-600" id="summary-icon-expense" />}
             colorClass="bg-rose-50 text-rose-600"
@@ -455,7 +686,7 @@ export default function App() {
 
           {/* Analytics Charts (Recharts) Column */}
           <div className="lg:col-span-8 space-y-6" id="charts-column">
-            <FinanceCharts transactions={transactions} />
+            <FinanceCharts transactions={transactions} selectedMonth={selectedMonth} />
           </div>
 
         </div>
@@ -463,7 +694,7 @@ export default function App() {
         {/* Ledger Transaction History List table */}
         <div className="w-full" id="history-row">
           <TransactionList
-            transactions={transactions}
+            transactions={filteredTxs}
             onDelete={handleDeleteTransaction}
             onEditSelect={handleEditSelect}
             isLoading={isDataLoading}

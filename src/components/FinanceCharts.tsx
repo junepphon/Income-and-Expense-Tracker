@@ -18,9 +18,10 @@ import { TrendingUp, TrendingDown, DollarSign, PieChart as PieIcon, BarChart2, C
 
 interface FinanceChartsProps {
   transactions: Transaction[];
+  selectedMonth?: string;
 }
 
-export default function FinanceCharts({ transactions }: FinanceChartsProps) {
+export default function FinanceCharts({ transactions, selectedMonth = 'all' }: FinanceChartsProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'expense' | 'income'>('all');
 
   // 1. Process data for Monthly Comparison (Last 6 months)
@@ -80,6 +81,10 @@ export default function FinanceCharts({ transactions }: FinanceChartsProps) {
     let totalTypeSum = 0;
 
     transactions.forEach((tx) => {
+      // Filter by dynamic selectedMonth
+      if (selectedMonth !== 'all' && !tx.date.startsWith(selectedMonth)) {
+        return;
+      }
       if (activeTab !== 'all' && tx.type !== activeTab) return;
       if (!categoryGroup[tx.category]) {
         categoryGroup[tx.category] = { amount: 0, type: tx.type };

@@ -1,5 +1,5 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import {
   getFirestore,
   collection,
@@ -163,14 +163,71 @@ export const api = {
     }
   },
 
+  loginWithEmailLocal: async (email: string) => {
+    const cleaned = email.trim().toLowerCase();
+    // Safely encode string to base64
+    const encoded = btoa(encodeURIComponent(cleaned).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
+    const mockUser = {
+      uid: 'local_' + encoded.replace(/[^a-zA-Z0-9]/g, ''),
+      displayName: cleaned.split('@')[0],
+      email: cleaned,
+      emailVerified: true,
+      photoURL: null,
+    };
+    localStorage.setItem('mock_user_session', JSON.stringify(mockUser));
+    localStorage.setItem('firebase_bypass_active', 'true');
+    bypassFirebase = true;
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('firebase-bypass-changed'));
+    return mockUser;
+  },
+
+  loginWithEmailAndPassword: async (email: string, password: string) => {
+    if (isFirebaseConfigured && auth) {
+      try {
+        localStorage.removeItem('firebase_bypass_active');
+        bypassFirebase = false;
+        window.dispatchEvent(new Event('firebase-bypass-changed'));
+        const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+        return result.user;
+      } catch (err: any) {
+        console.error('Firebase signin with email/password error:', err);
+        throw err;
+      }
+    } else {
+      throw new Error('ระบบเชื่อมต่อเซิร์ฟเวอร์หลักไม่ได้เปิดใช้งาน');
+    }
+  },
+
+  registerWithEmailAndPassword: async (email: string, password: string) => {
+    if (isFirebaseConfigured && auth) {
+      try {
+        localStorage.removeItem('firebase_bypass_active');
+        bypassFirebase = false;
+        window.dispatchEvent(new Event('firebase-bypass-changed'));
+        const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        return result.user;
+      } catch (err: any) {
+        console.error('Firebase register with email/password error:', err);
+        throw err;
+      }
+    } else {
+      throw new Error('ระบบเชื่อมต่อเซิร์ฟเวอร์หลักไม่ได้เปิดใช้งาน');
+    }
+  },
+
   // Log out
   logout: async () => {
-    if (isFirebaseConfigured && !bypassFirebase && auth) {
-      await signOut(auth);
-    } else {
-      localStorage.removeItem('mock_user_session');
-      window.dispatchEvent(new Event('storage'));
+    localStorage.removeItem('mock_user_session');
+    if (isFirebaseConfigured && auth) {
+      try {
+        await signOut(auth);
+      } catch (e) {
+        console.error('Logout error:', e);
+      }
     }
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('firebase-bypass-changed'));
   },
 
   // Monitor Auth Changes

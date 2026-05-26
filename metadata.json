@@ -1,6 +1,6 @@
 {
   "name": "Income and Expense Tracker",
-  "description": "เเอฟบันทึกรายรับรายจ่าย สรุปยอดแยกหมวดหมู่ เปรียบเทียบผลแต่ละเดือน แสดงผลเป็นแดชบอร์ดดูง่าย เก็บข้อมูลใน Firebase",
+  "description": "แอปบันทึกรายรับรายจ่ายที่มีประสิทธิภาพ สรุปยอดแยกหมวดหมู่ เปรียบเทียบผลแต่ละเดือน แสดงผลเป็นแดชบอร์ดดูง่าย บันทึกข้อมูลปลอดภัยออฟไลน์ 100% ในเครื่องคุณ",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

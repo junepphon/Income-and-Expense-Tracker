@@ -17,6 +17,7 @@ export default function TransactionList({ transactions, onDelete, onEditSelect, 
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const itemsPerPage = 10;
 
   // Formatter for Currency
@@ -286,18 +287,36 @@ export default function TransactionList({ transactions, onDelete, onEditSelect, 
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm('คุณต้องการลบรายการนี้ใช่หรือไม่? ดำเนินการแล้วไม่สามารถกู้คืนได้')) {
-                              onDelete(tx.id);
-                            }
-                          }}
-                          title="ลบรายการ"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                          id={`tx-delete-btn-${tx.id}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {deletingId === tx.id ? (
+                          <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg p-0.5 animate-fade-in" id={`tx-delete-confirm-box-${tx.id}`}>
+                            <button
+                              onClick={() => {
+                                onDelete(tx.id);
+                                setDeletingId(null);
+                              }}
+                              className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[10px] font-bold cursor-pointer transition-colors"
+                              id={`tx-confirm-delete-btn-${tx.id}`}
+                            >
+                              แน่ใจ, ลบ
+                            </button>
+                            <button
+                              onClick={() => setDeletingId(null)}
+                              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md text-[10px] font-bold cursor-pointer transition-colors"
+                              id={`tx-cancel-delete-btn-${tx.id}`}
+                            >
+                              ไม่
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeletingId(tx.id)}
+                            title="ลบรายการ"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            id={`tx-delete-btn-${tx.id}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
