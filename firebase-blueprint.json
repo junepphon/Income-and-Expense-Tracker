@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "An income or expense record",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The UID of the user who owns this transaction"
+        },
+        "amount": {
+          "type": "number",
+          "description": "The amount in THB"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"],
+          "description": "The type of transaction"
+        },
+        "category": {
+          "type": "string",
+          "description": "The category (e.g., Salary, Food, Utilities, Transport, Shopping, Entertainment, Investment, Other)"
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "The date of the transaction (YYYY-MM-DD)"
+        },
+        "description": {
+          "type": "string",
+          "description": "A description/notes"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["ownerId", "amount", "type", "category", "date", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "User income and expense transactions"
+    }
+  }
+}
