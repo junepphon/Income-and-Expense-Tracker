@@ -1,5 +1,5 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import {
   getFirestore,
   collection,
@@ -161,6 +161,44 @@ export const api = {
       window.dispatchEvent(new Event('storage'));
       return mockUser;
     }
+  },
+
+  loginWithGoogleRedirect: async () => {
+    if (isFirebaseConfigured && !bypassFirebase && auth) {
+      try {
+        localStorage.removeItem('firebase_bypass_active');
+        bypassFirebase = false;
+        window.dispatchEvent(new Event('firebase-bypass-changed'));
+        await signInWithRedirect(auth, googleProvider);
+      } catch (err) {
+        console.error('Redirect sign in error:', err);
+        throw err;
+      }
+    } else {
+      const mockUser = {
+        uid: 'mock_user_123',
+        displayName: 'ผู้ใช้ทั่วไป (Guest Local Live)',
+        email: 'guest@fintrack.local',
+        emailVerified: true,
+        photoURL: null,
+      };
+      localStorage.setItem('mock_user_session', JSON.stringify(mockUser));
+      window.dispatchEvent(new Event('storage'));
+      return mockUser;
+    }
+  },
+
+  checkRedirectResult: async () => {
+    if (isFirebaseConfigured && auth) {
+      try {
+        const result = await getRedirectResult(auth);
+        return result?.user || null;
+      } catch (err) {
+        console.error('Error getting redirect result:', err);
+        throw err;
+      }
+    }
+    return null;
   },
 
   loginWithEmailLocal: async (email: string) => {

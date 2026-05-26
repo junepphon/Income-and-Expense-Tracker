@@ -117,6 +117,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Handle Google Auth Redirect Results on Mount
+  useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const redirectUser = await api.checkRedirectResult();
+        if (redirectUser) {
+          setUser(redirectUser);
+        }
+      } catch (err: any) {
+        console.error("Redirect auth error captured on startup:", err);
+        setLoginError('🔒 ข้อผิดพลาดจากการป้องกันของเบราว์เซอร์หรือสิทธิ์โดเมน: ไม่สามารถแสดงหน้าต่างล็อกอิน Google ได้ หรือยังไม่ได้ลงทะเบียน Authorized Domains ใน Firebase Console');
+        setLoginErrorType('google-auth-failed');
+      }
+    };
+    checkRedirect();
+  }, []);
+
   // Subscribe to transaction store
   useEffect(() => {
     if (!user) {
@@ -285,6 +302,18 @@ export default function App() {
     }
   };
 
+  const handleGoogleRedirectLogin = async () => {
+    try {
+      setLoginError(null);
+      setLoginErrorType(null);
+      await api.loginWithGoogleRedirect();
+    } catch (err: any) {
+      console.error(err);
+      setLoginError('🔒 ข้อผิดพลาดจากการป้องกันของเบราว์เซอร์หรือสิทธิ์โดเมน: กรุณาตรวจสอบการตั้งค่า Authorized Domains ใน Firebase Console');
+      setLoginErrorType('google-auth-failed');
+    }
+  };
+
   // Auth Loading Screen Display
   if (isAuthLoading) {
     return (
@@ -410,13 +439,23 @@ export default function App() {
                 <span>หรือระบุสิทธิ์ด้วย Google</span>
                 <div className="h-[1px] bg-slate-200 w-10"></div>
               </div>
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                className="w-full py-2.5 px-4 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-2xl font-semibold text-xs cursor-pointer transition-all flex items-center justify-center gap-2"
-              >
-                เข้าใช้งานผ่าน Google Auth Popup
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="w-full py-2.5 px-4 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-2xl font-bold text-xs cursor-pointer transition-all flex items-center justify-center gap-2 shadow-2xs"
+                >
+                  💬 ล็อกอินด่วนด้วย Google Auth Popup
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoogleRedirectLogin}
+                  className="w-full py-2.5 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-2xl font-bold text-xs cursor-pointer transition-all flex items-center justify-center gap-2 shadow-2xs"
+                  title="แนะนำสำหรับเบราว์เซอร์ที่บล็อก Pop-up และการันตีผ่านระบบ Redirect"
+                >
+                  🌐 ล็อกอินผ่าน Google Redirect (แนะนำเมื่อติดปัญหา)
+                </button>
+              </div>
 
               {isInIframe && (
                 <div className="p-3 bg-amber-50/80 border border-amber-100 rounded-xl text-[11px] text-amber-900 leading-relaxed font-semibold space-y-1.5 animate-fade-in" id="iframe-google-auth-notice">
@@ -520,37 +559,62 @@ export default function App() {
               )}
 
               {loginErrorType === 'google-auth-failed' && (
-                <div className="pt-1 flex flex-col gap-2.5" id="error-action-google-auth-failed">
-                  <div className="text-[11px] text-amber-850 font-bold bg-amber-50 p-2.5 rounded-xl border border-amber-100 leading-relaxed">
-                    🛠️ คำสั่งแก้ไขปัญหา Google Popup: เนื่องจากกฎระเบียบความปลอดภัยภายใน Sandbox (iFrame) หรือยังไม่ได้ผูกสิทธิ์ Domain บน Firebase คอนโซล คุณสามารถข้ามปัญหานี้ได้ทันทีโดยเลือกข้อใดข้อหนึ่งด้านล่าง:
+                <div className="pt-1 flex flex-col gap-3" id="error-action-google-auth-failed">
+                  <div className="text-[11px] text-slate-700 bg-amber-50 p-3.5 rounded-xl border border-amber-100 leading-relaxed space-y-2 font-sans">
+                    <p className="font-bold text-amber-955 flex items-center gap-1">
+                      <span>🛠️ วิธีแก้ไขปัญหาโดเมนบล็อก (Authorized Domains) บน Vercel:</span>
+                    </p>
+                    <p>
+                      สาเหตุหลักเกิดจากสิทธิ์ความปลอดภัย โดยโดเมนที่เปิดอยู่ ณ ตอนนี้ ยังไม่ได้ถูกลงทะเบียนในคอนโซลของ Google Firebase
+                    </p>
+                    <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 font-mono text-[11px] text-amber-950 select-all break-all flex flex-col gap-1 shadow-2xs">
+                      <span className="text-[9px] text-slate-500 font-bold tracking-wider">คัดลอกค่านี้ไปใช้:</span>
+                      <strong className="text-blue-700 bg-blue-50/50 px-1.5 py-0.5 border border-blue-100 rounded break-all font-semibold font-mono">{window.location.hostname}</strong>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1.5 text-slate-600 font-semibold pl-1 text-[10.5px]">
+                      <li>เปิด <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-0.5 font-bold">Firebase Console 🔗</a> ของท่าน</li>
+                      <li>ไปที่เมนู <strong>Authentication</strong> ด้านซ้าย</li>
+                      <li>คลิกแท็บ <strong>Settings</strong> ด้านซ้าย/บน แล้วเลือกเมนูย่อย <strong>Authorized domains</strong></li>
+                      <li>คลิกปุ่ม <strong>"Add domain"</strong> แล้วนำค่าโดเมนสีน้ำเงินด้านบนนี้ไปใส่ และกดบันทึก</li>
+                    </ol>
                   </div>
                   
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        setLoginError(null);
-                        setLoginErrorType(null);
-                        setIsCloudModeInput(false);
-                        await api.loginWithEmailLocal(loginEmail || "guest@fintrack.local");
-                      } catch (err: any) {
-                        setLoginError(err?.message || String(err));
-                        setLoginErrorType(null);
-                      }
-                    }}
-                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
-                  >
-                    ⚡ สลับมาใช้ "บัญชีประจำเครื่อง (Local)" (กระเป๋าเซฟแยกตามอีเมล เข้าใช้ได้ทันที)
-                  </button>
-                  
-                  <a
-                    href={window.location.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs block"
-                  >
-                    🌐 เปิดแอปแยกหน้าต่างแท็บใหม่ (New Tab) เพื่อให้ Google Popup ทำงาน
-                  </a>
+                  <div className="flex flex-col gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleGoogleRedirectLogin}
+                      className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      🔁 ลองใช้ Google Redirect (ลดปัญหาระบบป๊อปอัปบล็อก)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setLoginError(null);
+                          setLoginErrorType(null);
+                          setIsCloudModeInput(false);
+                          await api.loginWithEmailLocal(loginEmail || "guest@fintrack.local");
+                        } catch (err: any) {
+                          setLoginError(err?.message || String(err));
+                          setLoginErrorType(null);
+                        }
+                      }}
+                      className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      ⚡ เปลี่ยนไปใช้งาน "บัญชีประจำเครื่อง (Local)" (เข้าใช้ได้ทันที)
+                    </button>
+                    
+                    <a
+                      href={window.location.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs block"
+                    >
+                      🌐 เปิดแอปหน้าแท็บใหม่แบบเต็มรูปแบบ (New Tab)
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
