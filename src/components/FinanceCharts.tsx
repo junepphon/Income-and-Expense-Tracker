@@ -22,7 +22,7 @@ interface FinanceChartsProps {
 }
 
 export default function FinanceCharts({ transactions, selectedMonth = 'all' }: FinanceChartsProps) {
-  const [activeTab, setActiveTab] = useState<'all' | 'expense' | 'income'>('all');
+  const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense');
 
   // 1. Process data for Monthly Comparison (Last 6 months)
   const monthlyData = useMemo(() => {
@@ -85,7 +85,7 @@ export default function FinanceCharts({ transactions, selectedMonth = 'all' }: F
       if (selectedMonth !== 'all' && !tx.date.startsWith(selectedMonth)) {
         return;
       }
-      if (activeTab !== 'all' && tx.type !== activeTab) return;
+      if (tx.type !== activeTab) return;
       if (!categoryGroup[tx.category]) {
         categoryGroup[tx.category] = { amount: 0, type: tx.type };
       }
@@ -144,7 +144,7 @@ export default function FinanceCharts({ transactions, selectedMonth = 'all' }: F
     }).format(val);
   };
 
-  const currentSelectionTotalLabel = activeTab === 'all' ? 'รายรับ-รายจ่ายรวม' : activeTab === 'income' ? 'รายรับรวม' : 'รายจ่ายรวม';
+  const currentSelectionTotalLabel = activeTab === 'income' ? 'รายรับรวม' : 'รายจ่ายรวม';
 
   // Pie chart colors (Standard matches or custom theme fallback)
   const PIE_COLORS = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
@@ -163,24 +163,13 @@ export default function FinanceCharts({ transactions, selectedMonth = 'all' }: F
             <p className="text-xs text-slate-400 font-sans" id="breakdown-subtitle">สัดส่วนสถิติรายรับและรายจ่ายจากการทำรายการ</p>
           </div>
           
-          {/* Toggle Type Category View with "All Combined" Default Option */}
+          {/* Toggle Type Category View */}
           <div className="flex border border-slate-200 rounded-lg p-0.5 bg-slate-50 self-start sm:self-center" id="category-tab-container">
             <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
-                activeTab === 'all'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              id="cat-tab-all"
-            >
-              รวมทั้งหมด
-            </button>
-            <button
               onClick={() => setActiveTab('expense')}
-              className={`px-3 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
+              className={`px-4 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'expense'
-                  ? 'bg-white text-rose-500 shadow-sm'
+                  ? 'bg-white text-rose-600 shadow-2xs font-bold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
               id="cat-tab-expense"
@@ -189,9 +178,9 @@ export default function FinanceCharts({ transactions, selectedMonth = 'all' }: F
             </button>
             <button
               onClick={() => setActiveTab('income')}
-              className={`px-3 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
+              className={`px-4 py-1.5 text-xs font-sans font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'income'
-                  ? 'bg-white text-emerald-600 shadow-sm'
+                  ? 'bg-white text-emerald-600 shadow-2xs font-bold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
               id="cat-tab-income"
@@ -236,7 +225,7 @@ export default function FinanceCharts({ transactions, selectedMonth = 'all' }: F
                   {/* Center values representing combined stats summary */}
                   <div className="absolute inset-0 flex flex-col justify-center items-center text-center p-1" id="pie-center-summary">
                     <span className="text-[9px] font-sans text-slate-400 uppercase tracking-widest leading-none" id="pie-center-label">
-                      {activeTab === 'all' ? 'ปริมาณรวม' : activeTab === 'income' ? 'รับรวม' : 'จ่ายรวม'}
+                      {activeTab === 'income' ? 'ยอดรับรวม' : 'ยอดจ่ายรวม'}
                     </span>
                     <span className="text-xs font-mono font-bold text-slate-800 mt-1 line-clamp-1" id="pie-center-amount">
                       {formatTHB(categoryBreakdownData.total)}
@@ -256,13 +245,6 @@ export default function FinanceCharts({ transactions, selectedMonth = 'all' }: F
                         <span className="font-sans font-medium text-slate-700 truncate max-w-[150px] sm:max-w-[200px] flex items-center gap-1.5" id={`row-title-${item.rawCategory}`}>
                           <span className={`w-2 h-2 rounded-full shrink-0 ${barColor}`} />
                           <span className="truncate">{item.name}</span>
-                          {activeTab === 'all' && (
-                            <span className={`text-[9px] px-1 py-0.5 rounded font-bold shrink-0 leading-none ${
-                              item.type === 'income' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-500 border border-rose-100'
-                            }`}>
-                              {item.type === 'income' ? 'รับ' : 'จ่าย'}
-                            </span>
-                          )}
                         </span>
                         <div className="font-mono flex items-center gap-1.5 text-slate-600" id={`row-metrics-${item.rawCategory}`}>
                           <span className="font-semibold" id={`row-amount-${item.rawCategory}`}>{formatTHB(item.value)}</span>
